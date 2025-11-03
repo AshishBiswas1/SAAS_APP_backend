@@ -1,1 +1,3 @@
 node_modules
+.Prettierrc
+Config.env
