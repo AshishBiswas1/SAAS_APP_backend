@@ -7,6 +7,9 @@ const {
   deleteUser,
   getMe,
   deleteMe,
+  uploadUserPhoto,
+  resizeAndUploadUserPhoto,
+  updateMe,
 } = require('./../controller/userController');
 
 const {
@@ -29,6 +32,10 @@ router.route('/reset-password').post(resetPassword);
 router.use(protect);
 
 router.route('/getMe').get(getMe);
+
+router
+  .route('/updateMe')
+  .patch(uploadUserPhoto, resizeAndUploadUserPhoto, updateMe);
 
 router.route('/deleteMe').patch(deleteMe);
 
