@@ -1,6 +1,7 @@
 const express = require('express');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
+const cors = require('cors');
 
 const userRouter = require('./Router/userRouter');
 const courseRouter = require('./Router/courseRouter');
@@ -11,6 +12,15 @@ const AppError = require('./util/appError');
 const { globalErrorHandler } = require('./controller/errorController');
 
 const app = express();
+
+// CORS Configuration
+const corsOptions = {
+  origin: ['http://localhost:5173', 'http://localhost:3000'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
 
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));

@@ -14,9 +14,9 @@ exports.signup = catchAsync(async (req, res, next) => {
     password,
     options: {
       data: {
-        name: name,
-      },
-    },
+        name: name
+      }
+    }
   });
 
   if (error) {
@@ -28,8 +28,8 @@ exports.signup = catchAsync(async (req, res, next) => {
     message:
       'User created successfully. Please check your email to confirm your account.',
     data: {
-      user: data.user,
-    },
+      user: data.user
+    }
   });
 });
 
@@ -42,7 +42,7 @@ exports.login = catchAsync(async (req, res, next) => {
 
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
-    password,
+    password
   });
 
   if (error) {
@@ -59,15 +59,16 @@ exports.login = catchAsync(async (req, res, next) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     maxAge: 24 * 60 * 60 * 1000,
-    sameSite: 'strict',
+    sameSite: 'strict'
   });
 
   res.status(200).json({
     status: 'success',
     message: 'Logged in successfully',
+    token: accessToken,
     data: {
-      user: data.user,
-    },
+      user: data.user
+    }
   });
 });
 
@@ -126,7 +127,7 @@ exports.forgotPassword = catchAsync(async (req, res, next) => {
   }
 
   const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.FRONTEND_URL}/reset-password`,
+    redirectTo: `${process.env.FRONTEND_URL}/reset-password`
   });
 
   if (error) {
@@ -136,7 +137,7 @@ exports.forgotPassword = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: 'success',
     message: 'Password reset email sent successfully. Please check your email.',
-    data,
+    data
   });
 });
 
@@ -157,14 +158,14 @@ exports.resetPassword = catchAsync(async (req, res, next) => {
     {
       global: {
         headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      },
+          Authorization: `Bearer ${accessToken}`
+        }
+      }
     }
   );
 
   const { data, error } = await supabaseWithToken.auth.updateUser({
-    password: newPassword,
+    password: newPassword
   });
 
   if (error) {
@@ -174,6 +175,6 @@ exports.resetPassword = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: 'success',
     message: 'Password updated successfully',
-    data,
+    data
   });
 });
