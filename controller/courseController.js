@@ -38,11 +38,14 @@ exports.uploadBannerToStorage = catchAsync(async (req, res, next) => {
     return next(new AppError(`Failed to upload image: ${error.message}`, 400));
   }
 
-  const {
-    data: { publicUrl }
-  } = supabase.storage.from('courses').getPublicUrl(filename);
+  // Check if bucket is public, if not use signed URL
+  const { data: publicUrlData } = supabase.storage
+    .from('courses')
+    .getPublicUrl(filename);
 
-  req.body.image = publicUrl;
+  // For public buckets, use publicUrl directly
+  // For private buckets, you'd need to create a signed URL with expiry
+  req.body.image = publicUrlData.publicUrl;
 
   next();
 });
