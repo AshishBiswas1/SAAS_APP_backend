@@ -9,7 +9,7 @@ const {
   deleteMe,
   uploadUserPhoto,
   resizeAndUploadUserPhoto,
-  updateMe,
+  updateMe
 } = require('./../controller/userController');
 
 const {
@@ -18,7 +18,7 @@ const {
   protect,
   restrictTo,
   forgotPassword,
-  resetPassword,
+  resetPassword
 } = require('./../controller/authController');
 
 const router = express.Router();
@@ -29,9 +29,11 @@ router.route('/login').post(login);
 router.route('/forget-password').post(forgotPassword);
 router.route('/reset-password').post(resetPassword);
 
-router.use(protect);
-
+// Public route: get current user from token (cookie or header)
 router.route('/getMe').get(getMe);
+
+// Protect remaining routes
+router.use(protect);
 
 router
   .route('/updateMe')

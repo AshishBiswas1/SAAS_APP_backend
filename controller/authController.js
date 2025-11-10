@@ -56,7 +56,8 @@ exports.login = catchAsync(async (req, res, next) => {
   }
 
   res.cookie('jwt', accessToken, {
-    httpOnly: true,
+    // make the cookie accessible to client JS so logout can be fully client-side
+    httpOnly: false,
     secure: process.env.NODE_ENV === 'production',
     maxAge: 24 * 60 * 60 * 1000,
     sameSite: 'strict'

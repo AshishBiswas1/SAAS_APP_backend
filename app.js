@@ -8,6 +8,7 @@ const courseRouter = require('./Router/courseRouter');
 const videoRouter = require('./Router/videoRouter');
 const reviewRouter = require('./Router/reviewRouter');
 const paymentRouter = require('./Router/paymentRouter');
+const { webhookCheckout } = require('./controller/paymentController');
 const AppError = require('./util/appError');
 const { globalErrorHandler } = require('./controller/errorController');
 
@@ -28,6 +29,14 @@ if (process.env.NODE_ENV === 'development') {
 
 app.use(cookieParser());
 
+// Stripe requires the raw body for webhook signature verification.
+// Mount the webhook endpoint BEFORE express.json() so the raw body is available.
+app.post(
+  '/api/saas/payment/webhook-checkout',
+  express.raw({ type: 'application/json' }),
+  webhookCheckout
+);
+
 app.use(express.json());
 
 app.get('/', (req, res) => {
@@ -43,7 +52,8 @@ app.use('/api/saas/review', reviewRouter);
 app.use('/api/saas/payment', paymentRouter);
 
 app.all('*', (req, res, next) => {
-  next(new AppError(`Can't find ${req.originalUrl} on this server`));
+  // Return a 404 for unknown routes (mark as operational)
+  next(new AppError(`Can't find ${req.originalUrl} on this server`, 404));
 });
 
 app.use(globalErrorHandler);

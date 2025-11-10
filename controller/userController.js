@@ -15,7 +15,7 @@ const multerFilter = (req, file, cb) => {
 
 const upload = multer({
   storage: multerStorage,
-  fileFilter: multerFilter,
+  fileFilter: multerFilter
 });
 
 exports.uploadUserPhoto = upload.single('image');
@@ -26,11 +26,78 @@ exports.resizeAndUploadUserPhoto = catchAsync(async (req, res, next) => {
   const userId = req.user.id;
   const filename = `user-${userId}.jpeg`;
 
+  // Attempt to remove any previously stored image for this user. This covers
+  // two cases:
+  // 1) Previous image used the canonical filename `user-<id>.jpeg` (we'll try
+  //    to remove that).
+  // 2) Previous image URL stored in the user's `image` column used a
+  //    different filename (e.g. older uploads). We try to parse the filename
+  //    out of the previous public URL and remove that object.
+  try {
+    // First, try to delete the canonical filename (safe no-op if not present)
+    const { error: removeErr1 } = await supabase.storage
+      .from('user')
+      .remove([filename]);
+    if (removeErr1) {
+      // Not fatal; just log
+      // eslint-disable-next-line no-console
+      console.warn(
+        'Could not remove canonical user photo:',
+        removeErr1.message || removeErr1
+      );
+    }
+
+    // Next, fetch the user's current image URL from the DB and try to delete
+    // that file explicitly (handles legacy filenames).
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('image')
+      .eq('id', userId)
+      .single();
+
+    const prevImageUrl = existingUser && existingUser.image;
+    if (prevImageUrl) {
+      try {
+        // Remove query params
+        const cleanUrl = prevImageUrl.split('?')[0];
+        // Try to extract the path after '/user/' which is the object key
+        const idx = cleanUrl.indexOf('/user/');
+        if (idx !== -1) {
+          const prevFilename = cleanUrl.slice(idx + '/user/'.length);
+          if (prevFilename) {
+            const { error: removeErr2 } = await supabase.storage
+              .from('user')
+              .remove([prevFilename]);
+            if (removeErr2) {
+              // eslint-disable-next-line no-console
+              console.warn(
+                'Could not remove previous user photo:',
+                removeErr2.message || removeErr2
+              );
+            }
+          }
+        }
+      } catch (delErr) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          'Error while attempting to remove previous user photo:',
+          delErr
+        );
+      }
+    }
+  } catch (remErr) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      'Unexpected error while cleaning up previous user photos:',
+      remErr
+    );
+  }
+
   const { data, error } = await supabase.storage
     .from('user')
     .upload(filename, req.file.buffer, {
       contentType: req.file.mimetype,
-      upsert: true,
+      upsert: true
     });
 
   if (error) {
@@ -38,10 +105,15 @@ exports.resizeAndUploadUserPhoto = catchAsync(async (req, res, next) => {
   }
 
   const {
-    data: { publicUrl },
+    data: { publicUrl }
   } = supabase.storage.from('user').getPublicUrl(filename);
 
-  req.body.image = publicUrl;
+  // Add a cache-busting query string so browsers and CDNs load the new image
+  // immediately after profile update. We store the full URL (including the
+  // query param) in the user's `image` column so the frontend will receive
+  // a new URL when it fetches the user and re-render the avatar.
+  const cacheBustedUrl = `${publicUrl}?v=${Date.now()}`;
+  req.body.image = cacheBustedUrl;
 
   next();
 });
@@ -85,8 +157,8 @@ exports.updateMe = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: 'success',
     data: {
-      user: updatedUser[0],
-    },
+      user: updatedUser[0]
+    }
   });
 });
 
@@ -96,7 +168,7 @@ exports.getAllUsers = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: 'success',
     length: data.length,
-    data,
+    data
   });
 });
 
@@ -107,9 +179,9 @@ exports.createUser = catchAsync(async (req, res, next) => {
     password,
     options: {
       data: {
-        name: name,
-      },
-    },
+        name: name
+      }
+    }
   });
 
   if (error) {
@@ -118,7 +190,7 @@ exports.createUser = catchAsync(async (req, res, next) => {
 
   res.status(200).json({
     status: 'success',
-    data,
+    data
   });
 });
 
@@ -136,7 +208,7 @@ exports.getUser = catchAsync(async (req, res, next) => {
 
   res.status(200).json({
     status: 'success',
-    user: data,
+    user: data
   });
 });
 
@@ -155,7 +227,7 @@ exports.updateUser = catchAsync(async (req, res, next) => {
 
   res.status(200).json({
     status: 'success',
-    user: updatedUser,
+    user: updatedUser
   });
 });
 
@@ -172,26 +244,46 @@ exports.deleteUser = catchAsync(async (req, res, next) => {
   }
 
   res.status(204).json({
-    status: 'success',
+    status: 'success'
   });
 });
 
 exports.getMe = catchAsync(async (req, res, next) => {
-  const userId = req.params.id;
+  // Public endpoint: read token from cookie or Authorization header,
+  // resolve the Supabase session to get the user id, then fetch the
+  // canonical user record from the `users` table.
+  const token =
+    (req.cookies && req.cookies.jwt) ||
+    (req.headers.authorization && req.headers.authorization.split(' ')[1]);
 
-  const { data: user, error } = await supabase
-    .from('users')
-    .eq('id', userId)
-    .select();
-
-  if (error) {
-    return next(new AppError('No user found with that id', 404));
+  if (!token) {
+    // No token: return success with null user so frontend can treat as logged out
+    return res.status(200).json({ status: 'success', data: { user: null } });
   }
 
-  res.status(200).json({
-    status: 'success',
-    user,
-  });
+  // Get user info from Supabase auth using the token
+  const { data: sessionData, error: sessionError } =
+    await supabase.auth.getUser(token);
+
+  if (sessionError || !sessionData?.user?.id) {
+    // Token invalid or expired
+    return res.status(200).json({ status: 'success', data: { user: null } });
+  }
+
+  const userId = sessionData.user.id;
+
+  // Fetch the canonical user row from `users` table
+  const { data: userRow, error: userError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (userError || !userRow) {
+    return res.status(200).json({ status: 'success', data: { user: null } });
+  }
+
+  res.status(200).json({ status: 'success', data: { user: userRow } });
 });
 
 exports.deleteMe = catchAsync(async (req, res, next) => {
@@ -207,6 +299,6 @@ exports.deleteMe = catchAsync(async (req, res, next) => {
   }
 
   res.status(200).json({
-    status: 'success',
+    status: 'success'
   });
 });
