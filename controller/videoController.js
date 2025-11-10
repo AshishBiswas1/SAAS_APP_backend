@@ -237,6 +237,117 @@ exports.getVideosByCourse = catchAsync(async (req, res, next) => {
   });
 });
 
+exports.getVideosWithProgress = catchAsync(async (req, res, next) => {
+  const courseId = req.params.courseId;
+
+  const { data: videos, error: videosError } = await supabase
+    .from('videos')
+    .select(
+      'video_id, video_title, video_duration, video_url, order_index, created_at, updated_at, in_course'
+    )
+    .eq('in_course', courseId)
+    .order('order_index', { ascending: true });
+
+  if (videosError) {
+    return next(new AppError(videosError.message, 400));
+  }
+
+  // If no authenticated user, return videos with default progress
+  const userId = req.user?.id;
+
+  if (!userId) {
+    const mapped = (videos || []).map((v) => ({
+      ...v,
+      progress: { status: 'not_started', watched_seconds: 0 }
+    }));
+
+    return res.status(200).json({
+      status: 'success',
+      results: mapped.length,
+      data: { videos: mapped }
+    });
+  }
+
+  // Fetch progress rows for this user and these videos
+  const videoIds = (videos || []).map((v) => v.video_id);
+
+  let progressData = [];
+  if (videoIds.length > 0) {
+    const { data: pd, error: pdErr } = await supabase
+      .from('video_progress')
+      .select('video_id, status, watched_seconds, updated_at')
+      .eq('user_id', userId)
+      .in('video_id', videoIds);
+
+    if (pdErr) {
+      // If table doesn't exist or other error, ignore and return default progress
+      progressData = [];
+    } else {
+      progressData = pd || [];
+    }
+  }
+
+  const progMap = {};
+  progressData.forEach((p) => {
+    progMap[p.video_id] = p;
+  });
+
+  const mapped = (videos || []).map((v) => ({
+    ...v,
+    progress: progMap[v.video_id] || {
+      status: 'not_started',
+      watched_seconds: 0
+    }
+  }));
+
+  res.status(200).json({
+    status: 'success',
+    results: mapped.length,
+    data: { videos: mapped }
+  });
+});
+
+exports.updateVideoProgress = catchAsync(async (req, res, next) => {
+  const videoId = req.params.id;
+  const userId = req.user?.id;
+
+  if (!userId) return next(new AppError('Not authenticated', 401));
+
+  const { status, watched_seconds } = req.body;
+
+  if (!status && watched_seconds === undefined) {
+    return next(new AppError('Please provide status or watched_seconds', 400));
+  }
+
+  // Build upsert object
+  const upsertObj = {
+    user_id: userId,
+    video_id: videoId,
+    status: status || 'in_progress',
+    watched_seconds: watched_seconds || 0,
+    updated_at: new Date().toISOString()
+  };
+
+  // Try to upsert into video_progress table
+  const { data, error } = await supabase
+    .from('video_progress')
+    .upsert([upsertObj], { onConflict: ['user_id', 'video_id'] })
+    .select();
+
+  if (error) {
+    // If the table doesn't exist or upsert fails, return a helpful message
+    return next(
+      new AppError(`Failed to update progress: ${error.message}`, 400)
+    );
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Progress updated',
+    data: { progress: data[0] }
+  });
+});
+
 exports.createVideo = catchAsync(async (req, res, next) => {
   const { video_title, video_duration, in_course, video_url, order_index } =
     req.body;
