@@ -29,12 +29,13 @@ router
 
 router.route('/reorder/:courseId').patch(reorderVideos);
 
+// expose per-video progress endpoint for authenticated users BEFORE admin restriction
+router.route('/:id/progress').post(protect, updateVideoProgress);
+
 router.use(restrictTo('admin'));
 
 router.route('/').get(getAllVideos).post(createVideo);
 
 router.route('/:id').get(getVideo).patch(updateVideo).delete(deleteVideo);
-// update or create progress for a video for the current user
-router.route('/:id/progress').post(protect, updateVideoProgress);
 
 module.exports = router;
