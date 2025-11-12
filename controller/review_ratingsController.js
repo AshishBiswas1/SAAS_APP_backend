@@ -26,6 +26,30 @@ exports.createReview = catchAsync(async (req, res, next) => {
     return next(new AppError('Course not found', 404));
   }
 
+  // Prevent course author from posting a review for their own course
+  const { data: courseAuthorData, error: courseAuthorError } = await supabase
+    .from('courses')
+    .select('author')
+    .eq('courseid', course_id)
+    .single();
+
+  if (courseAuthorError) {
+    // If we can't determine the author, surface a generic error
+    return next(new AppError('Unable to validate course author', 400));
+  }
+
+  if (
+    courseAuthorData &&
+    String(courseAuthorData.author) === String(req.user.id)
+  ) {
+    return next(
+      new AppError(
+        'You are not allowed to post a review for your own course',
+        403
+      )
+    );
+  }
+
   // Check if user already reviewed this course
   const { data: existingReview } = await supabase
     .from('review_ratings')
